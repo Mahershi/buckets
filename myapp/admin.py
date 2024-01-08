@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import User, UserBucket, Bucket, Access
+from .models import User, UserBucket, Bucket, Access, BucketField, FieldType
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.utils.translation import gettext_lazy as _
 
@@ -74,3 +74,36 @@ class AccessAdmin(admin.ModelAdmin):
     filter_horizontal = ()
     search_fields = ()
     ordering = ('type', )
+
+@admin.register(FieldType)
+class FieldTypeAdmin(admin.ModelAdmin):
+    fieldsets = (
+        (None, {'fields': ('type', )}),
+    )
+
+    add_fieldsets = (
+        (None, {'fields': ('type', )}),
+    )
+
+    list_display = ('id', 'type',)
+    list_filter = ()
+    filter_horizontal = ()
+    search_fields = ()
+    ordering = ('type', )
+
+
+@admin.register(BucketField)
+class BucketFieldAdmin(admin.ModelAdmin):
+    fieldsets = (
+        (None, {'fields': ('bucket', 'key', 'type', 'value', 'created_at')}),
+    )
+
+    add_fieldsets = (
+        (None, {'fields': ('bucket', 'key', 'type', 'value', 'created_at')}),
+    )
+
+    list_display = ('id', 'bucket', 'key', 'value', 'type', 'created_at')
+    list_filter = ('type', 'bucket',)
+    filter_horizontal = ()
+    search_fields = ()
+    ordering = ('key', )
