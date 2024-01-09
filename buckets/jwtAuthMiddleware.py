@@ -33,6 +33,7 @@ class JWTAuthMiddleware(BaseMiddleware):
                 try:
                     # if token is expired, it throws ExpiredSignatureError and returns AnonymousUser to reject connection
                     decoded_data = jwt_decode(token_key, settings.SECRET_KEY, algorithms=["HS256"])
+
                     scope["user"] = await get_user(validated_token=decoded_data)
                 except ExpiredSignatureError as e:
                     scope["user"] = AnonymousUser()

@@ -4,6 +4,7 @@ from asgiref.sync import async_to_sync
 from django.contrib.auth.models import AnonymousUser
 from ..models import UserBucket, Bucket, FieldType, BucketField
 from django.contrib.auth.models import AnonymousUser
+from ..helpers.messsage_handler import event_map, Handler
 
 
 class BucketConsumer(WebsocketConsumer):
@@ -32,6 +33,7 @@ class BucketConsumer(WebsocketConsumer):
 
             # user allowed - set access level for this connection.
             self.access = queryset[0].access
+            Handler.send_snapshot(self)
 
         # print("Rejecting")
         # self.close(4401)
@@ -45,13 +47,16 @@ class BucketConsumer(WebsocketConsumer):
         text_data_json = json.loads(text_data)
         print(text_data_json)
 
-        async_to_sync(self.channel_layer.group_send)(
-            str(self.bucket.pk),
-            text_data_json
-        )
+        event_type = text_data_json['type']
+        event_map[event_type](self, text_data_json)
 
-    def chat_message(self, event):
-        event.pop('type')
+        # async_to_sync(self.channel_layer.group_send)(
+        #     str(self.bucket.pk),
+        #     text_data_json
+        # )
+
+    def update(self, event):
+        print("InUpdate Consumer")
         self.send(text_data=json.dumps(event))
 
 
@@ -63,34 +68,11 @@ class BucketConsumer(WebsocketConsumer):
     # TODO: it check exisitng key for a bucket before creating, if exists, updates the new value and type.
     # TODO: it does check whether the sender has write access,
         # if not, wont create or update but doesnt send a message back.
-    def add_field(self, event):
-        if self.access.pk == 3:
-            print("Write access not granted!")
-            # self.send(text_data="Write Access not granted!")
-            return
-        print("in add_field: ", self.user)
-        # data has type, name, value keys
-        data = event.pop('data')
+    # def add_field(self, event):
+    #     pass
 
-        field_type = FieldType.objects.get(pk=data['type'])
-        if data['value']:
-            value = data['value']
-        else:
-            value = ''
-        try:
-            bucket_field, created = BucketField.objects.update_or_create(
-                key=data['key'],
-                bucket=self.bucket,
-                defaults={
-                    "type": field_type,
-                    "value": value
-                }
-            )
 
-            # bucket_field.save()
-            print("Created: " + str(created))
-        except Exception as e:
-            print(e)
+
 
 
 
