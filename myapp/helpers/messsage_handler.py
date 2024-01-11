@@ -4,9 +4,7 @@ import json
 
 
 class Handler:
-    # When a new update is received, i.e. update in field values
-    # still need to figure out how to process deletion of fields, probably different function
-    # TODO: Call model updates using CronJobs to change in DB
+    # Sends the provides snapshot (json_event) to all in group
     @staticmethod
     def update(bucket_consumer, json_event):
         print("Inupdate Handler")
@@ -15,21 +13,30 @@ class Handler:
             json_event
         )
 
+
+    # Sends snapshot to current user, used on initial connect.
     @staticmethod
     def send_snapshot(bucket_consumer):
-        print("Send Snapshot: ")
-        json_data = Handler.populate_contents(bucket_consumer.bucket)
+        final_json = Handler.create_snapshot(bucket_consumer.bucket)
+        bucket_consumer.send(json.dumps(final_json, default=str))
+
+    # Prepares a JSON snapshot of given bucket.
+    @staticmethod
+    def create_snapshot(bucket):
+        json_data = Handler.populate_contents(bucket)
         final_json = dict()
         final_json['type'] = 'update'
         final_json['data'] = json_data
-        bucket_consumer.send(json.dumps(final_json, default=str))
 
+        return final_json
 
-
+    # Helps to create snapshot
+    # Will be recursive when Sub Buckets are implemented.
     @staticmethod
     def populate_contents(bucket):
         bucket_dict = dict()
         bucket_dict['name'] = bucket.name
+        bucket_dict['id'] = bucket.pk
         bucket_dict['created_at'] = bucket.created_at
         print(bucket_dict)
         # field_type_bucket = FieldType.objects.get(pk=)
@@ -46,12 +53,18 @@ class Handler:
 
         return bucket_dict
 
+    # Adds or modifies a field value
+    # on success, sends the new snapshot to all listeenrs
+    # TODO: on error, will send error msg only to the consumer who requested the changes.
     @staticmethod
     def add_field(bucket_consumer, json_event):
         print("in add_field: ", bucket_consumer.user)
         if bucket_consumer.access.pk == 3:
-            print("Write access not granted!")
-            bucket_consumer.send(text_data="Write Access not granted!")
+            error_json = {
+                "type": "error",
+                "error": "User does not have WRITE Access"
+            }
+            bucket_consumer.send(text_data=json.dumps(error_json))
             return
 
         # data has type, name, value keys
@@ -75,6 +88,10 @@ class Handler:
             # bucket_field.save()
             print("Created: " + str(created))
 
+            # When created or edited, on success
+            # Prepares a snapshot and sends to all the listeners in the group using the update()
+            final_json = Handler.create_snapshot(bucket=bucket_consumer.bucket)
+            Handler.update(bucket_consumer, final_json)
 
         except Exception as e:
             print(e)

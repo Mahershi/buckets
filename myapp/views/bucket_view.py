@@ -12,6 +12,7 @@ class BucketView(viewsets.ModelViewSet):
     serializer_class = BucketSerializer
     queryset = Bucket.objects.all()
 
+
     def list(self, request, *args, **kwargs):
         return error_response(
             status=404

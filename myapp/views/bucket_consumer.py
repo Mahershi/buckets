@@ -35,9 +35,6 @@ class BucketConsumer(WebsocketConsumer):
             self.access = queryset[0].access
             Handler.send_snapshot(self)
 
-        # print("Rejecting")
-        # self.close(4401)
-
         async_to_sync(self.channel_layer.group_add)(str(self.bucket.pk), self.channel_name)
 
     def disconnect(self, code):
@@ -50,26 +47,11 @@ class BucketConsumer(WebsocketConsumer):
         event_type = text_data_json['type']
         event_map[event_type](self, text_data_json)
 
-        # async_to_sync(self.channel_layer.group_send)(
-        #     str(self.bucket.pk),
-        #     text_data_json
-        # )
 
     def update(self, event):
-        print("InUpdate Consumer")
-        self.send(text_data=json.dumps(event))
+        print("InUpdate Consumer: ", self.user.name)
+        self.send(text_data=json.dumps(event, default=str))
 
-
-    # TODO: IMP this implementation is incorrect
-    # TODO: when it calls add_field, its through send_group, so all listeners get this message to process it
-    # Even if Viewer sends it, it will be acted upon becz add_field is also called by other users in this group.
-    # Handle this before calling send_group. i.e. in receive block.
-
-    # TODO: it check exisitng key for a bucket before creating, if exists, updates the new value and type.
-    # TODO: it does check whether the sender has write access,
-        # if not, wont create or update but doesnt send a message back.
-    # def add_field(self, event):
-    #     pass
 
 
 
