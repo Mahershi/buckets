@@ -58,7 +58,6 @@ class Handler:
     # TODO: on error, will send error msg only to the consumer who requested the changes.
     @staticmethod
     def add_field(bucket_consumer, json_event):
-        print("in add_field: ", bucket_consumer.user)
         if bucket_consumer.access.pk == 3:
             error_json = {
                 "type": "error",
@@ -84,10 +83,6 @@ class Handler:
                     "value": value
                 }
             )
-
-            # bucket_field.save()
-            print("Created: " + str(created))
-
             # When created or edited, on success
             # Prepares a snapshot and sends to all the listeners in the group using the update()
             final_json = Handler.create_snapshot(bucket=bucket_consumer.bucket)
@@ -96,8 +91,30 @@ class Handler:
         except Exception as e:
             print(e)
 
+    @staticmethod
+    def remove_field(bucket_consumer, json_event):
+        if bucket_consumer.access.pk == 3:
+            error_json = {
+                "type": "error",
+                "error": "User does not have WRITE Access"
+            }
+            bucket_consumer.send(text_data=json.dumps(error_json))
+            return
+
+        # data has type, name, value keys
+        data = json_event.pop('data')
+
+        try:
+            BucketField.objects.filter(bucket=bucket_consumer.bucket, key=data['key']).delete()
+            # Prepares a snapshot and sends to all the listeners in the group using the update()
+            final_json = Handler.create_snapshot(bucket=bucket_consumer.bucket)
+            Handler.update(bucket_consumer, final_json)
+
+        except Exception as e:
+            print(e)
 
 event_map = {
     'add_field': Handler.add_field,
-    'update': Handler.update
+    'update': Handler.update,
+    'remove_field': Handler.remove_field
 }
