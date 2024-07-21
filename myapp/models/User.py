@@ -6,6 +6,7 @@ from ..managers import UserManager
 
 
 class User(AbstractBaseUser, PermissionsMixin):
+    # Unique fields are indexed by default.
     email = models.EmailField(
         unique=True,
         null=False,

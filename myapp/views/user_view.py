@@ -16,7 +16,7 @@ class UserView(viewsets.ModelViewSet):
 
     def get_permissions(self):
         print(self.action)
-        if self.action == 'create':
+        if self.action == 'create' or self.action == 'retrieve':
             self.permission_classes = [AllowAny, ]
         else:
             self.permission_classes = [IsAuthenticated, ]
@@ -52,6 +52,7 @@ class UserView(viewsets.ModelViewSet):
 
     def retrieve(self, request, *args, **kwargs):
         # can only call app/user/<id> to retrieve if Authenticated User is a Super User.
+        return super().retrieve(request, args, **kwargs)
         if request.user:
             if request.user.is_superuser:
                 try:

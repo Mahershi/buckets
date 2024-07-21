@@ -20,13 +20,19 @@ SECRET_KEY = "django-insecure-)t14i)k(0a0wd6ji$sy$mqu_)b4sg#_-_thbtsq#@hdy%%o3b%
 
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = [
+    'localhost',
+    "*"
+]
+CORS_ALLOW_ALL_ORIGINS = True
+
 
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(hours=2)
 }
 
 INSTALLED_APPS = [
+    "corsheaders",
     "daphne",
     "django.contrib.admin",
     "django.contrib.auth",
@@ -38,6 +44,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware',
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",

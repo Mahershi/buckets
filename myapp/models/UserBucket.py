@@ -17,3 +17,8 @@ class UserBucket(models.Model):
 
     class Meta:
         db_table = "user_buckets"
+        # Added group indexing for (user, bucket)
+        # Optimized get() for UB just by 'user' as well as by (user, bucket)
+        indexes = [
+            models.Index(fields=['user', 'bucket'])
+        ]

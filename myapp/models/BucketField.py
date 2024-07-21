@@ -10,6 +10,7 @@ import datetime
 
 
 class BucketField(models.Model):
+
     bucket = models.ForeignKey(Bucket, on_delete=models.CASCADE, null=False, blank=False)
     key = models.CharField(max_length=20, null=False, blank=False)
     type = models.ForeignKey(FieldType, on_delete=models.PROTECT, null=False, blank=False)
@@ -21,3 +22,8 @@ class BucketField(models.Model):
 
     class Meta:
         db_table = 'bucket_field'
+        # Indexing bucket field. Optmizes getting all Fields for a given bucket.
+        # Optimized get for (bucket, key)
+        indexes = [
+            models.Index(fields=['bucket', 'key'])
+        ]
