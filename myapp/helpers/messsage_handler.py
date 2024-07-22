@@ -1,6 +1,8 @@
-from ..models import FieldType, BucketField
+from ..models import FieldType, BucketField, Bucket
 from asgiref.sync import async_to_sync
 import json
+from django.core.exceptions import ObjectDoesNotExist
+import traceback
 
 '''
     Handler class providing static methods for Bucket Consumer Class.
@@ -45,11 +47,17 @@ class Handler:
         queryset = BucketField.objects.filter(bucket__exact=bucket)
         contents = dict()
         for q in queryset:
-            contents[q.key] = {
-                "value": q.value,
-                "created_at": q.created_at,
-                "type": q.type
-            }
+            print(q.type)
+            if q.type.id == 4:
+                sub_bucket: Bucket = Bucket.objects.get(pk=q.value)
+                contents[q.key] = Handler.populate_contents(sub_bucket)
+                contents[q.key]['type'] = 'BUCKET'
+            else:
+                contents[q.key] = {
+                    "value": q.value,
+                    "created_at": q.created_at,
+                    "type": q.type
+                }
 
         bucket_dict['content'] = contents
 
@@ -69,7 +77,6 @@ class Handler:
             bucket_consumer.send(text_data=json.dumps(error_json))
             return
 
-
         data = json_event.pop('data')
         # 'data' has type, name and value keys
 
@@ -79,11 +86,42 @@ class Handler:
         else:
             # if 'value' missing, create an empty field
             value = ''
+
         try:
+            cur_bucket = bucket_consumer.bucket
+            if '.' in data['key']:
+                try:
+                    for sub_b_name in data['key'].split('.')[:-1]:
+                        print("For slug:", sub_b_name)
+                        # just to check if sub_b exists in the cur_bucket.
+                        bf: BucketField = BucketField.objects.get(bucket=cur_bucket, key=sub_b_name)
+                        # bf.value is the pk of the subbucket.
+                        cur_bucket: Bucket = Bucket.objects.get(pk=bf.value)
+                except ObjectDoesNotExist as e:
+                    print("Bucket hierarchy exception: ", sub_b_name, " not found!")
+                    print(traceback.format_exc())
+                    return
+                except Exception as e:
+                    print("Unknown Exception: ", e)
+                    print(traceback.format_exc())
+                    return
+
+            key = data['key'].split('.')[-1]
+            print("Adding key:", key, " in Bucket:", cur_bucket, " type:", field_type)
+
+            # Handling creation of Map type.
+            if field_type.type == 'BUCKET':
+                # Create a new Bucket and assign pk as value.
+                new_bucket = Bucket(name=key, is_root=False)
+                new_bucket.save()
+                print("New BUCKET Created: ", new_bucket.pk)
+                value = new_bucket.pk
+
+
             # update or create field in the database.
             bucket_field, created = BucketField.objects.update_or_create(
-                key=data['key'],
-                bucket=bucket_consumer.bucket,
+                key=key,
+                bucket=cur_bucket,
                 defaults={
                     "type": field_type,
                     "value": value
@@ -100,6 +138,7 @@ class Handler:
 
     # To remove an existing field from the bucket.
     # Don't need to move this to cron job as deleting one field at a time is not expensive.
+    # TODO: Implement recursive remove for Sub buckets where remove for a sub buckets deletes all the data from that bucket.
     @staticmethod
     def remove_field(bucket_consumer, json_event):
         # Access Level id=3 is read only.
@@ -114,11 +153,31 @@ class Handler:
 
 
         data = json_event.pop('data')
+        cur_bucket = bucket_consumer.bucket
+
+        if '.' in data['key']:
+            try:
+                for sub_b_name in data['key'].split('.')[:-1]:
+                    # just to check if sub_b exists in the cur_bucket.
+                    bf: BucketField = BucketField.objects.get(bucket=cur_bucket, key=sub_b_name)
+                    # bf.value is the pk of the subbucket.
+                    cur_bucket: Bucket = Bucket.objects.get(pk=bf.value)
+            except ObjectDoesNotExist as e:
+                print("Bucket hierarchy exception: ", sub_b_name, " not found!")
+                print(traceback.format_exc())
+                return
+            except Exception as e:
+                print("Unknown Exception: ", e)
+                print(traceback.format_exc())
+                return
+
+        key = data['key'].split('.')[-1]
+
 
         try:
             # Extract field name (key) from the json_event
             # remove the field from the database for the bucket.
-            BucketField.objects.filter(bucket=bucket_consumer.bucket, key=data['key']).delete()
+            BucketField.objects.filter(bucket=cur_bucket, key=key).delete()
             # Prepares a snapshot and sends to all the listeners in the group using the update()
             final_json = Handler.create_snapshot(bucket=bucket_consumer.bucket)
             Handler.update(bucket_consumer, final_json)
