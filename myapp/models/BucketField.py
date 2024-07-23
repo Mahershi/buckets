@@ -1,4 +1,5 @@
-# TODO: Current max length for field value is 200.
+# TODO: Current max length for field value is 200, need to be way bigger. depending on 'type'. One way would be to diff tables for diff types. lets see.
+# TODO: Change value field type to TextField for unlimited length - 1GiB
 # All primitive types (currently str, bool, int, double) will be stored as str
 # Value is bucket id for Dict type, because dict is rep by a Sub-bucket.
 

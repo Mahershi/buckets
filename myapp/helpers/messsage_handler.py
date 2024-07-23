@@ -175,6 +175,7 @@ class Handler:
 
 
         try:
+            # TODO: In case of Sub Buckets, remove the Sub Buckets from Bucket table. for now, only BucketField entry is removed.
             # Extract field name (key) from the json_event
             # remove the field from the database for the bucket.
             BucketField.objects.filter(bucket=cur_bucket, key=key).delete()
