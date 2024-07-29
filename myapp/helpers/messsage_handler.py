@@ -1,4 +1,4 @@
-from ..models import FieldType, BucketField, Bucket
+from ..models import FieldType, BucketField, Bucket, ArrayField
 from asgiref.sync import async_to_sync
 import json
 from django.core.exceptions import ObjectDoesNotExist
@@ -34,6 +34,27 @@ class Handler:
 
         return final_json
 
+
+    @staticmethod
+    def populate_array(bf: BucketField):
+        array_elements: ArrayField = ArrayField.objects.filter(parent_field=bf).order_by('index')
+        contents = dict()
+
+        contents['name'] = bf.key
+        contents['created_at'] = bf.created_at
+        contents['type'] = bf.type
+
+        elements = list()
+        for element in array_elements:
+            elements.append({
+                "value": element.value,
+                "index": element.index,
+                "type": element.type,
+                "created_at": element.created_at
+            })
+        contents['elements'] = elements
+        return contents
+
     # Helps to create snapshot - populates all existing fields
     # Will be recursive when Sub Buckets are implemented.
     @staticmethod
@@ -47,11 +68,12 @@ class Handler:
         queryset = BucketField.objects.filter(bucket__exact=bucket)
         contents = dict()
         for q in queryset:
-            print(q.type)
             if q.type.id == 4:
                 sub_bucket: Bucket = Bucket.objects.get(pk=q.value)
                 contents[q.key] = Handler.populate_contents(sub_bucket)
                 contents[q.key]['type'] = 'BUCKET'
+            elif q.type.id == 5:
+                contents[q.key] = Handler.populate_array(q)
             else:
                 contents[q.key] = {
                     "value": q.value,
@@ -136,6 +158,79 @@ class Handler:
             # TODO: handle database error and notify consumer that triggered the event.
             print(e)
 
+
+
+
+    # Add an element to existing array.
+    @staticmethod
+    def add_array_element(bucket_consumer, json_event):
+        if bucket_consumer.access.pk == 3:
+            error_json = {
+                "type": "error",
+                "error": "User does not have WRITE Access"
+            }
+            # on error, send error message only to consumer that triggered the event
+            bucket_consumer.send(text_data=json.dumps(error_json))
+            return
+
+        data = json_event.pop('data')
+        cur_bucket = bucket_consumer.bucket
+
+        field_type = FieldType.objects.get(pk=data['type'])
+        if data['value']:
+            value = data['value']
+        else:
+            # if 'value' missing, create an empty field
+            value = ''
+
+        # b1.b2....bn.arr
+        if '.' in data['key']:
+            try:
+                for sub_b_name in data['key'].split('.')[:-1]:
+                    # just to check if sub_b exists in the cur_bucket.
+                    bf: BucketField = BucketField.objects.get(bucket=cur_bucket, key=sub_b_name)
+                    # bf.value is the pk of the subbucket.
+                    cur_bucket: Bucket = Bucket.objects.get(pk=bf.value)
+            except ObjectDoesNotExist as e:
+                print("Bucket hierarchy exception: ", sub_b_name, " not found!")
+                print(traceback.format_exc())
+                return
+            except Exception as e:
+                print("Unknown Exception: ", e)
+                print(traceback.format_exc())
+                return
+
+        # NAME of the array that element is being added to.
+        array_key = data['key'].split('.')[-1]
+        bf = BucketField.objects.get(bucket=cur_bucket, key=array_key)
+
+        # Not allowing adding Bucket or ARRAY as Array elements. Will get too complex.
+        # TODO: Proper exception handling
+        if field_type.type == 'BUCKET' or field_type.type == 'ARRAY':
+            return
+        try:
+            print("creating array field")
+            array_field: ArrayField = ArrayField.objects.create(
+                parent_field=bf,
+                value=value,
+                type=field_type,
+                index=0
+            )
+
+            final_json = Handler.create_snapshot(bucket=bucket_consumer.bucket)
+            Handler.update(bucket_consumer, final_json)
+        except Exception as e:
+            print("Error Creating Array Field: ", e)
+            print(traceback.format_exc())
+
+
+
+    @staticmethod
+    def remove_array_element(bucket_consumer, json_element):
+        # TODO: implement, also handle reindexing for rest of the index greater than what is removed
+        pass
+
+
     # To remove an existing field from the bucket.
     # Don't need to move this to cron job as deleting one field at a time is not expensive.
     # TODO: Implement recursive remove for Sub buckets where remove for a sub buckets deletes all the data from that bucket.
@@ -192,5 +287,6 @@ class Handler:
 event_map = {
     'add_field': Handler.add_field, # when new field is added.
     'update': Handler.update,   # unused for the moment. Not sure why we created this.
-    'remove_field': Handler.remove_field    # when a field is deleted.
+    'remove_field': Handler.remove_field, # when a field is deleted.
+    'add_array_element': Handler.add_array_element
 }

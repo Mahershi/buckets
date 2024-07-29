@@ -20,6 +20,14 @@ class ArrayField(models.Model):
     type = models.ForeignKey(FieldType, on_delete=models.PROTECT, null=False, blank=False)
     created_at = models.DateTimeField(_("Date"), default=datetime.datetime.now)
 
+    def save(
+        self, force_insert=False, force_update=False, using=None, update_fields=None
+    ):
+        count = ArrayField.objects.filter(parent_field=self.parent_field).count()
+        self.index = count
+        print("Count: ", count)
+        super().save(force_insert=force_insert, force_update=force_update, using=using, update_fields=update_fields)
+
     def __str__(self):
         return str(self.index)
 
