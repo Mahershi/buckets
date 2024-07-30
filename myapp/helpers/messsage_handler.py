@@ -1,8 +1,17 @@
+'''
+    TODO: Implement cron jobs where required to improve response time.
+        Possibly while remove array element.
+
+'''
+
+
 from ..models import FieldType, BucketField, Bucket, ArrayField
 from asgiref.sync import async_to_sync
 import json
 from django.core.exceptions import ObjectDoesNotExist
 import traceback
+
+
 
 '''
     Handler class providing static methods for Bucket Consumer Class.
@@ -65,24 +74,26 @@ class Handler:
         bucket_dict['created_at'] = bucket.created_at
 
         # get the contents of the bucket from database
-        queryset = BucketField.objects.filter(bucket__exact=bucket)
-        contents = dict()
-        for q in queryset:
-            if q.type.id == 4:
-                sub_bucket: Bucket = Bucket.objects.get(pk=q.value)
-                contents[q.key] = Handler.populate_contents(sub_bucket)
-                contents[q.key]['type'] = 'BUCKET'
-            elif q.type.id == 5:
-                contents[q.key] = Handler.populate_array(q)
-            else:
-                contents[q.key] = {
-                    "value": q.value,
-                    "created_at": q.created_at,
-                    "type": q.type
-                }
+        try:
+            queryset = BucketField.objects.filter(bucket__exact=bucket)
+            contents = dict()
+            for q in queryset:
+                if q.type.id == 4:
+                    sub_bucket: Bucket = Bucket.objects.get(pk=q.value)
+                    contents[q.key] = Handler.populate_contents(sub_bucket)
+                    contents[q.key]['type'] = 'BUCKET'
+                elif q.type.id == 5:
+                    contents[q.key] = Handler.populate_array(q)
+                else:
+                    contents[q.key] = {
+                        "value": q.value,
+                        "created_at": q.created_at,
+                        "type": q.type
+                    }
 
-        bucket_dict['content'] = contents
-
+            bucket_dict['content'] = contents
+        except Exception as e:
+            print("Exception Populating Contents: ", str(e))
         return bucket_dict
 
     # Adds or modifies a field value
@@ -134,12 +145,21 @@ class Handler:
             # Handling creation of Map type.
             if field_type.type == 'BUCKET':
                 # Create a new Bucket and assign pk as value.
-                new_bucket = Bucket(name=key, is_root=False)
-                new_bucket.save()
-                print("New BUCKET Created: ", new_bucket.pk)
-                value = new_bucket.pk
+                # TODO: big issue: do not create new is existing for this Parent bucket.
+                # # TODO: above has been implemeted but need rigorous testing.
+                try:
+                    bucket_field: BucketField = BucketField.objects.get(bucket=cur_bucket, key=key)
+                    # This sub bucket already exists. Just get its pk
+                    value = bucket_field.value
+                except ObjectDoesNotExist:
+                    # First time creating Sub Bucket with this map
+                    new_bucket = Bucket(name=key, is_root=False)
+                    new_bucket.save()
+                    print("New BUCKET Created: ", new_bucket.pk)
+                    value = new_bucket.pk
 
-
+            # This is kind of useless in case of BUCKET and above 'except' is not performed.
+            # TODO: find a work around to optimize.
             # update or create field in the database.
             bucket_field, created = BucketField.objects.update_or_create(
                 key=key,
@@ -151,6 +171,7 @@ class Handler:
             )
             # When created or edited, on success
             # Prepares a snapshot and sends to all the listeners in the group using the update()
+
             final_json = Handler.create_snapshot(bucket=bucket_consumer.bucket)
             Handler.update(bucket_consumer, final_json)
 
@@ -233,7 +254,6 @@ class Handler:
 
     # To remove an existing field from the bucket.
     # Don't need to move this to cron job as deleting one field at a time is not expensive.
-    # TODO: Implement recursive remove for Sub buckets where remove for a sub buckets deletes all the data from that bucket.
     @staticmethod
     def remove_field(bucket_consumer, json_event):
         # Access Level id=3 is read only.
@@ -270,14 +290,26 @@ class Handler:
 
 
         try:
-            # TODO: In case of Sub Buckets, remove the Sub Buckets from Bucket table. for now, only BucketField entry is removed.
-            # Extract field name (key) from the json_event
-            # remove the field from the database for the bucket.
-            BucketField.objects.filter(bucket=cur_bucket, key=key).delete()
+            # Get the field mapping.
+            bf: BucketField = BucketField.objects.get(bucket=cur_bucket, key=key)
+
+            # If the field mapping to be deleted is a Bucket, delete its entry from Bucket table
+            # This will trigger deletion of child fields.
+            if bf.type.type == 'BUCKET':
+                try:
+                    Bucket.objects.get(pk=bf.value).delete()
+                except ObjectDoesNotExist:
+                    print("Sub Bucket to be deleted does not Exist in Bucket table")
+
+            # Delete the field mapping irrespective of type
+            # Important - DONOT Remove - Will break for sub buckets if removed.
+            bf.delete()
+
             # Prepares a snapshot and sends to all the listeners in the group using the update()
             final_json = Handler.create_snapshot(bucket=bucket_consumer.bucket)
             Handler.update(bucket_consumer, final_json)
-
+        except ObjectDoesNotExist as e:
+            print("Field to be Deleted does not exist.", str(e))
         except Exception as e:
             # TODO: handle database error and notify consumer that triggered the event.
             print(e)
